@@ -199,38 +199,99 @@ npm run clean               # Clean all build outputs and dependencies
 - Performance metrics collection
 - Error tracking and alerts
 
-## Deployment
 
-### Recommended Hosting
-- **Frontend**: Vercel (optimized for Next.js)
-- **Backend**: Railway, DigitalOcean, or AWS ECS
-- **Database**: Supabase, PlanetScale, or AWS RDS
-- **Cache**: Upstash Redis or AWS ElastiCache
-- **Monitoring**: Sentry, DataDog, or New Relic
+## Déploiement avec Ansible
 
-### Production Environment Variables
+Le projet inclut une automatisation complète du déploiement via Ansible. Cela permet d’installer, configurer et mettre à jour l’infrastructure et les applications de façon reproductible et sécurisée.
+
+### Prérequis
+- Ansible 2.10+
+- Accès SSH aux serveurs cibles
+- Docker et Docker Compose installés sur les serveurs
+
+### Structure Ansible
+Le dossier `ansible/` contient tous les playbooks et fichiers nécessaires :
+- `deploy.yml` : déploiement principal (backend, frontend, base de données, etc.)
+- `infrastructure.yml` : installation des dépendances système (Docker, etc.)
+- `start.yml` / `stop.yml` : démarrage/arrêt des services
+- `inventory.yml` : inventaire des hôtes cibles
+- `vault.yml` : gestion sécurisée des secrets (Ansible Vault)
+- `templates/` : fichiers de configuration dynamiques (nginx, redis, etc.)
+
+### Déploiement standard
+1. **Configurer l’inventaire**
+   - Modifiez `ansible/inventory.yml` pour définir vos serveurs cibles.
+2. **Configurer les variables sensibles**
+   - Utilisez Ansible Vault pour chiffrer les secrets :
+     ```sh
+     ansible-vault edit ansible/vault.yml
+     ```
+3. **Déployer l’infrastructure**
+   ```sh
+   cd ansible
+   ansible-playbook -i inventory.yml infrastructure.yml
+   ```
+4. **Déployer les applications**
+   ```sh
+   ansible-playbook -i inventory.yml deploy.yml
+   ```
+5. **Démarrer/arrêter les services**
+   ```sh
+   ansible-playbook -i inventory.yml start.yml
+   ansible-playbook -i inventory.yml stop.yml
+   ```
+
+### Bonnes pratiques
+- Ne stockez jamais de secrets en clair dans le dépôt.
+- Utilisez Ansible Vault pour toutes les variables sensibles.
+- Vérifiez les logs dans `ansible/logs/` pour le suivi des déploiements.
+- Consultez le fichier `ANSIBLE_GUIDE.md` pour plus de détails sur chaque playbook.
+
+### Variables d’environnement (exemple)
 ```bash
-# Frontend
-NEXT_PUBLIC_API_URL=https://api.your-domain.com
-NEXTAUTH_URL=https://your-domain.com
-NEXTAUTH_SECRET=your-production-secret
-
 # Backend
 DATABASE_URL=postgresql://user:pass@host:5432/db
-JWT_SECRET=your-super-secure-jwt-secret-256-bits
-STRIPE_SECRET_KEY=sk_live_...
+JWT_SECRET=... # à chiffrer avec Ansible Vault
+STRIPE_SECRET_KEY=...
 REDIS_URL=redis://user:pass@host:6379
+# Frontend
+NEXT_PUBLIC_API_URL=https://api.votre-domaine.com
 ```
 
-### Docker Production Build
-```bash
-# Build production images
-docker build -t prevent-frontend ./apps/frontend
-docker build -t prevent-backend ./apps/backend
 
-# Deploy with docker-compose
-docker compose -f docker-compose.prod.yml up -d
+### Lancement de l'application
+
+#### Méthode 1 : Environnement local (développement)
+Utilisez Docker Compose pour lancer tous les services en local :
+```sh
+docker compose up -d
 ```
+
+#### Méthode 2 : Déploiement automatisé avec Ansible
+Pour déployer sur un ou plusieurs serveurs distants de façon automatisée :
+1. Configurez l'inventaire dans `ansible/inventory.yml`.
+2. Chiffrez vos secrets avec Ansible Vault :
+   ```sh
+   ansible-vault edit ansible/vault.yml
+   ```
+3. Déployez l'infrastructure :
+   ```sh
+   cd ansible
+   ansible-playbook -i inventory.yml infrastructure.yml
+   ```
+4. Déployez les applications :
+   ```sh
+   ansible-playbook -i inventory.yml deploy.yml
+   ```
+5. Démarrez/arrêtez les services :
+   ```sh
+   ansible-playbook -i inventory.yml start.yml
+   ansible-playbook -i inventory.yml stop.yml
+   ```
+
+Pour plus de détails, voir la section "Déploiement avec Ansible" plus bas et le fichier `ANSIBLE_GUIDE.md`.
+
+---
 
 ## Development Roadmap
 
