@@ -1,7 +1,14 @@
+# Playbook : deploy.yml
+# Rôle : Déploiement applicatif complet (backend, frontend, config, etc.)
+# À exécuter après infrastructure.yml (qui installe Vault, Docker, etc.)
+#
+# ⚠️ Pour le premier déploiement, certaines variables sensibles (ex : vault_db_password)
+# doivent être définies temporairement dans l'inventaire, car Vault n'est pas encore initialisé.
+# Après initialisation de Vault, stockez-y les secrets et adaptez l'inventaire/les vars.
+# =============================================================
 ---
 - name: Déploiement complet SIT Inov avec Vault
   hosts: all
-  become: yes
   vars:
     app_name: sit_inov_website
     app_user: sit_inov
@@ -11,7 +18,6 @@
     postgres_version: "15"
     redis_version: "7.0"
     nginx_version: "stable"
-    
   tasks:
     - name: Mise à jour du système
       apt:
@@ -100,6 +106,8 @@
       when: ansible_os_family == "Debian"
 
     # Configuration utilisateur
+    # La création de l'utilisateur application n'est nécessaire qu'en production.
+    # En local (env == 'dev'), cette tâche est ignorée car elle nécessite les droits root.
     - name: Création de l'utilisateur application
       user:
         name: "{{ app_user }}"
@@ -109,6 +117,7 @@
         create_home: yes
         groups: docker
         append: yes
+      when: env != 'dev'
 
     # Configuration PostgreSQL
     - name: Configuration PostgreSQL
@@ -306,32 +315,32 @@
         certbot --nginx -d {{ app_domain }} --non-interactive --agree-tos --email {{ admin_email }}
       when: app_domain is defined and admin_email is defined
 
-  handlers:
-    - name: restart nginx
-      systemd:
-        name: nginx
-        state: restarted
+handlers:
+  - name: restart nginx
+    systemd:
+      name: nginx
+      state: restarted
 
-    - name: restart vault
-      systemd:
-        name: vault
-        state: restarted
+  - name: restart vault
+    systemd:
+      name: vault
+      state: restarted
 
-    - name: restart backend
-      systemd:
-        name: "{{ app_name }}-backend"
-        state: restarted
+  - name: restart backend
+    systemd:
+      name: "{{ app_name }}-backend"
+      state: restarted
 
-    - name: restart frontend
-      systemd:
-        name: "{{ app_name }}-frontend"
-        state: restarted
+  - name: restart frontend
+    systemd:
+      name: "{{ app_name }}-frontend"
+      state: restarted
 
-    - name: restart redis
-      systemd:
-        name: redis
-        state: restarted
+  - name: restart redis
+    systemd:
+      name: redis
+      state: restarted
 
-    - name: reload systemd
-      systemd:
-        daemon_reload: yes
+  - name: reload systemd
+    systemd:
+      daemon_reload: yes
