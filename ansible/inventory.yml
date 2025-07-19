@@ -1,98 +1,12 @@
-# Inventaire Ansible pour SIT Inov
-
-[production]
-sit-inov-prod ansible_host=your-production-server.com ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
-
-[staging]
-sit-inov-staging ansible_host=your-staging-server.com ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
-
-[development]
-sit-inov-dev ansible_host=localhost ansible_connection=local
-
-[all:vars]
-# Configuration générale
-app_name=sit_inov_website
-app_user=sit_inov
-app_directory=/opt/sit_inov
-app_repo_url=https://github.com/magicmaxmagic/sit_inov_website.git
-
-# Configuration Node.js
-node_version=18.x
-
-# Configuration PostgreSQL
-postgres_version=15
-postgres_user=sit_inov
-postgres_db=sit_inov_website
-
-# Configuration Redis
-redis_version=7.0
-redis_maxmemory=256mb
-
-# Configuration Nginx
-nginx_version=stable
-
-# Configuration Vault
-vault_version=1.15.2
-vault_api_addr=http://127.0.0.1:8200
-
-# Configuration SSL (production uniquement)
-# app_domain=your-domain.com
-# admin_email=admin@your-domain.com
-
-[production:vars]
-node_env=production
-app_version=main
-app_domain=app.example.com
-admin_email=admin@example.com
-api_url=https://api.example.com
-app_url=https://app.example.com
-cors_origin=https://app.example.com
-nextauth_url=https://app.example.com
-vault_addr=https://vault.example.com:8200
-vault_namespace=sit-inov
-log_level=info
-
-# Secrets (à configurer via Vault)
-vault_token=your-production-vault-token
-vault_role_id=your-production-role-id
-vault_secret_id=your-production-secret-id
-vault_db_password=your-production-db-password
-nextauth_secret=your-production-nextauth-secret
-
-[staging:vars]
-node_env=staging
-app_version=develop
-app_domain=staging.example.com
-admin_email=staging@example.com
-api_url=https://api-staging.example.com
-app_url=https://staging.example.com
-cors_origin=https://staging.example.com
-nextauth_url=https://staging.example.com
-vault_addr=https://vault-staging.example.com:8200
-vault_namespace=sit-inov-staging
-log_level=debug
-
-# Secrets (à configurer via Vault)
-vault_token=your-staging-vault-token
-vault_role_id=your-staging-role-id
-vault_secret_id=your-staging-secret-id
-vault_db_password=your-staging-db-password
-nextauth_secret=your-staging-nextauth-secret
-
-[development:vars]
-node_env=development
-app_version=main
-api_url=http://localhost:3001
-app_url=http://localhost:3000
-cors_origin=http://localhost:3000
-nextauth_url=http://localhost:3000
-vault_addr=http://localhost:8200
-vault_namespace=sit-inov-dev
-log_level=debug
-
-# Secrets (développement)
-vault_token=myroot
-vault_role_id=
-vault_secret_id=
-vault_db_password=dev_password_123
-nextauth_secret=dev_nextauth_secret
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
+      env: dev
+# Exemple pour la production (à décommenter et adapter)
+#  prod-server:
+#    ansible_host: 192.168.1.100
+#    ansible_user: ubuntu
+#    ansible_ssh_private_key_file: ~/.ssh/id_rsa
+#    env: prod
