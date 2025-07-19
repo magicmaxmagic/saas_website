@@ -1,0 +1,64 @@
+---
+- name: Déploiement complet SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    # Configuration du déploiement
+    deploy_vault: true              # Déployer Vault avec Ansible
+    deploy_infrastructure: true     # Déployer PostgreSQL, Redis, Nginx
+    deploy_applications: true       # Déployer Backend et Frontend
+    skip_docker_checks: true        # Ignorer les vérifications Docker (supposé déjà installé)
+    
+  tasks:
+    # Phase 1: Vérifications système
+    - name: Vérification prérequis
+      include_tasks: checks.yml
+      tags: [checks]
+
+    # Phase 2: Installation Vault
+    - name: Déploiement Vault
+      include_tasks: vault.yml
+      when: deploy_vault | default(true)
+      tags: [vault]
+
+    # Phase 3: Services d'infrastructure
+    - name: Services infrastructure
+      include_tasks: infrastructure.yml
+      when: deploy_infrastructure | default(true)
+      tags: [infrastructure]
+
+    # Phase 4: Applications
+    - name: Applications
+      include_tasks: applications.yml
+      when: deploy_applications | default(true)
+      tags: [applications]
+
+    # Phase 5: Vérifications finales
+    - name: Vérifications finales
+      include_tasks: verify.yml
+      tags: [verify]
+
+    # Résumé final
+    - name: Résumé du déploiement
+      debug:
+        msg: |
+          🚀 Déploiement SIT Innovation terminé !
+          
+          🔐 Vault : {{ 'http://localhost:8200 (Token: myroot)' if deploy_vault else 'Non déployé' }}
+          🗄️ PostgreSQL : {{ 'localhost:5432 (postgres/password)' if deploy_infrastructure else 'Non déployé' }}
+          📦 Redis : {{ 'localhost:6379' if deploy_infrastructure else 'Non déployé' }}
+          🌐 Frontend : {{ 'http://localhost:3000' if deploy_applications else 'Non déployé' }}
+          🔧 Backend : {{ 'http://localhost:4000' if deploy_applications else 'Non déployé' }}
+          
+          📋 Commandes utiles :
+          - Arrêt: ansible-playbook -i ansible/inventory.yml ansible/stop.yml
+          - Restart: ansible-playbook -i ansible/inventory.yml ansible/restart.yml
+          - Logs: ansible-playbook -i ansible/inventory.yml ansible/logs.yml
+          - Status: ansible-playbook -i ansible/inventory.yml ansible/status.yml
+          
+          💡 Configuration personnalisée :
+          - Vault: {{ 'Activé' if deploy_vault else 'Désactivé' }}
+          - Infrastructure: {{ 'Activée' if deploy_infrastructure else 'Désactivée' }}
+          - Applications: {{ 'Activées' if deploy_applications else 'Désactivées' }}

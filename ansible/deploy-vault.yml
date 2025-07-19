@@ -1,0 +1,12 @@
+---
+- name: Déploiement Vault uniquement
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    - name: Déploiement Vault
+      include_tasks: vault.yml
+      tags: [vault]

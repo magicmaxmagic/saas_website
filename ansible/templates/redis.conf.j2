@@ -1,0 +1,49 @@
+# Configuration Redis
+bind 127.0.0.1
+port 6379
+tcp-backlog 511
+timeout 0
+tcp-keepalive 300
+
+# Mémoire
+maxmemory {{ redis_maxmemory | default('256mb') }}
+maxmemory-policy allkeys-lru
+
+# Persistance
+save 900 1
+save 300 10
+save 60 10000
+stop-writes-on-bgsave-error yes
+rdbcompression yes
+rdbchecksum yes
+dbfilename dump.rdb
+dir /var/lib/redis
+
+# Logs
+loglevel notice
+logfile /var/log/redis/redis-server.log
+syslog-enabled yes
+syslog-ident redis
+
+# Sécurité
+{% if redis_password is defined %}
+requirepass {{ redis_password }}
+{% endif %}
+
+# Clients
+maxclients 10000
+
+# Réseau
+tcp-keepalive 300
+timeout 0
+
+# Modules
+# loadmodule /path/to/module.so
+
+# Commandes dangereuses désactivées
+rename-command FLUSHDB ""
+rename-command FLUSHALL ""
+rename-command CONFIG ""
+rename-command SHUTDOWN SHUTDOWN_{{ ansible_hostname }}
+rename-command DEBUG ""
+rename-command EVAL ""

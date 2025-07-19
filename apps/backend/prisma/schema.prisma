@@ -1,0 +1,257 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String
+  lastName  String
+  company   String?
+  password  String
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(true)
+  
+  // Subscription info
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  subscriptionStatus   SubscriptionStatus @default(TRIAL)
+  subscriptionPlan     SubscriptionPlan   @default(STARTER)
+  trialEndsAt         DateTime?
+  subscriptionEndsAt  DateTime?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+  
+  // Relations
+  sites        Site[]
+  threats      Threat[]
+  apiKeys      ApiKey[]
+  auditLogs    AuditLog[]
+  notifications Notification[]
+  
+  @@map("users")
+}
+
+model Site {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String   @unique
+  isActive    Boolean  @default(true)
+  apiKey      String   @unique @default(cuid())
+  
+  // Security settings
+  protectionLevel  ProtectionLevel @default(MEDIUM)
+  enableDdosProtection Boolean @default(true)
+  enableWafProtection  Boolean @default(true)
+  enableRateLimiting   Boolean @default(true)
+  
+  // Monitoring
+  uptime      Float    @default(99.9)
+  lastChecked DateTime @default(now())
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  threats  Threat[]
+  metrics  SiteMetric[]
+  
+  @@map("sites")
+}
+
+model Threat {
+  id          String      @id @default(cuid())
+  type        ThreatType
+  severity    ThreatSeverity
+  sourceIp    String
+  targetUrl   String
+  userAgent   String?
+  payload     String?
+  isBlocked   Boolean     @default(true)
+  riskScore   Int         @default(0)
+  
+  // Geolocation
+  country     String?
+  city        String?
+  
+  // Detection info
+  detectionRule String?
+  confidence    Float   @default(0.0)
+  
+  // Timestamps
+  detectedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  
+  // Relations
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([siteId, detectedAt])
+  @@index([userId, detectedAt])
+  @@map("threats")
+}
+
+model SiteMetric {
+  id           String   @id @default(cuid())
+  requests     Int      @default(0)
+  blockedRequests Int   @default(0)
+  responseTime Float    @default(0.0)
+  uptime       Float    @default(100.0)
+  bandwidth    Float    @default(0.0)
+  
+  // Time window
+  timestamp DateTime @default(now())
+  period    MetricPeriod @default(HOURLY)
+  
+  // Relations
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  
+  @@unique([siteId, timestamp, period])
+  @@index([siteId, timestamp])
+  @@map("site_metrics")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  permissions String[] // JSON array of permissions
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("api_keys")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  resource    String
+  resourceId  String?
+  oldValues   Json?
+  newValues   Json?
+  ipAddress   String?
+  userAgent   String?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType
+  isRead    Boolean            @default(false)
+  data      Json?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+  
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+}
+
+enum SubscriptionPlan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum ProtectionLevel {
+  LOW
+  MEDIUM
+  HIGH
+  MAXIMUM
+}
+
+enum ThreatType {
+  SQL_INJECTION
+  XSS
+  CSRF
+  DDOS
+  BRUTE_FORCE
+  BOT_ATTACK
+  MALWARE
+  PHISHING
+  SUSPICIOUS_ACTIVITY
+  RATE_LIMIT_EXCEEDED
+}
+
+enum ThreatSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MetricPeriod {
+  MINUTE
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum NotificationType {
+  THREAT_DETECTED
+  SITE_DOWN
+  SUBSCRIPTION_EXPIRING
+  PAYMENT_FAILED
+  SECURITY_ALERT
+  SYSTEM_UPDATE
+}

@@ -1,0 +1,32 @@
+# Configuration Vault
+ui = true
+cluster_addr = "https://127.0.0.1:8201"
+api_addr = "{{ vault_api_addr | default('http://127.0.0.1:8200') }}"
+disable_mlock = true
+
+# Stockage
+storage "file" {
+  path = "/opt/vault/data"
+}
+
+# Listener HTTP
+listener "tcp" {
+  address = "0.0.0.0:8200"
+  {% if vault_tls_cert_file is defined and vault_tls_key_file is defined %}
+  tls_cert_file = "{{ vault_tls_cert_file }}"
+  tls_key_file = "{{ vault_tls_key_file }}"
+  {% else %}
+  tls_disable = true
+  {% endif %}
+}
+
+# Logs
+log_level = "Info"
+log_file = "/opt/vault/logs/vault.log"
+log_rotate_duration = "24h"
+log_rotate_max_files = 30
+
+# Politique de scellement
+seal "aes256-gcm96" {
+  key = "{{ vault_seal_key | default('auto') }}"
+}

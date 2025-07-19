@@ -1,0 +1,77 @@
+---
+- name: Démarrage simple SIT Inov
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Vérification des prérequis
+    - name: Vérification Node.js
+      command: node --version
+      register: node_version_check
+      failed_when: false
+      changed_when: false
+      
+    - name: Vérification Docker
+      command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+      
+    - name: Arrêt si Docker manquant
+      fail:
+        msg: "Docker requis pour le déploiement"
+      when: docker_check.rc != 0
+
+    # Démarrage des services Docker
+    - name: Vérification des conteneurs existants
+      command: docker ps -a --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: existing_containers
+      failed_when: false
+      changed_when: false
+
+    - name: Démarrage des conteneurs existants
+      command: docker start {{ item }}
+      loop:
+        - postgres
+        - redis
+      when: "item in existing_containers.stdout"
+      failed_when: false
+
+    - name: Création des services Docker (seulement si nécessaire)
+      shell: docker compose up -d postgres redis
+      args:
+        chdir: "{{ project_dir }}"
+      tags: docker
+
+    - name: Attente PostgreSQL
+      wait_for:
+        port: 5432
+        host: localhost
+        timeout: 30
+      tags: docker
+
+    - name: Attente Redis
+      wait_for:
+        port: 6379
+        host: localhost
+        timeout: 30
+      tags: docker
+
+    # Affichage des résultats
+    - name: Résumé du démarrage
+      debug:
+        msg: |
+          ✅ Services de base démarrés !
+          
+          🌐 Services disponibles :
+          - PostgreSQL: localhost:5432
+          - Redis: localhost:6379
+          - Vault: http://localhost:8200 (token: myroot)
+          
+          📋 Prochaines étapes :
+          1. Déployer les applications: ansible-playbook -i ansible/inventory.yml ansible/applications.yml
+          2. Vérifier le statut: ansible-playbook -i ansible/inventory.yml ansible/status.yml
+          3. Arrêter: ansible-playbook -i ansible/inventory.yml ansible/stop.yml

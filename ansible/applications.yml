@@ -1,0 +1,163 @@
+---
+# Déploiement applications
+# Installation des dépendances backend
+- name: Installation dépendances backend
+  npm:
+    path: "{{ ansib- name: Test backend
+  uri:
+    url: http://localhost:4000/health
+    method: GET
+    timeout: 10
+  register: backend_health.PWD }}/apps/backend"
+    state: present
+    production: no
+
+# Installation des dépendances frontend
+- name: Installation dépendances frontend
+  npm:
+    path: "{{ ansible_env.PWD }}/apps/frontend"
+    state: present
+    production: no
+
+# Génération Prisma
+- name: Génération Prisma
+  command: npx prisma generate
+  args:
+    chdir: "{{ ansible_env.PWD }}/apps/backend"
+
+# Migration base de données
+- name: Migration base de données
+  command: npx prisma migrate deploy
+  args:
+    chdir: "{{ ansible_env.PWD }}/apps/backend"
+  environment:
+    DATABASE_URL: postgresql://postgres:password@localhost:5432/sit_inov_dev
+
+# Build backend
+- name: Build backend
+  command: npm run build
+  args:
+    chdir: "{{ ansible_env.PWD }}/apps/backend"
+
+# Build frontend
+- name: Build frontend
+  command: npm run build
+  args:
+    chdir: "{{ ansible_env.PWD }}/apps/frontend"
+
+# Dockerfiles
+- name: Dockerfile backend
+  copy:
+    content: |
+      FROM node:18-alpine
+      
+      WORKDIR /app
+      
+      # Copie des fichiers de config
+      COPY package*.json ./
+      COPY tsconfig*.json ./
+      COPY nest-cli.json ./
+      
+      # Installation des dépendances
+      RUN npm ci --only=production
+      
+      # Copie du code source
+      COPY . .
+      
+      # Build de l'application
+      RUN npm run build
+      
+      # Génération Prisma
+      RUN npx prisma generate
+      
+      EXPOSE 4000
+      
+      CMD ["npm", "run", "start:prod"]
+    dest: "{{ ansible_env.PWD }}/apps/backend/Dockerfile"
+    mode: '0644'
+
+- name: Dockerfile frontend
+  copy:
+    content: |
+      FROM node:18-alpine
+      
+      WORKDIR /app
+      
+      # Copie des fichiers de config
+      COPY package*.json ./
+      COPY next.config.js ./
+      COPY tailwind.config.ts ./
+      COPY tsconfig.json ./
+      
+      # Installation des dépendances
+      RUN npm ci --only=production
+      
+      # Copie du code source
+      COPY . .
+      
+      # Build de l'application
+      RUN npm run build
+      
+      EXPOSE 3000
+      
+      CMD ["npm", "start"]
+    dest: "{{ ansible_env.PWD }}/apps/frontend/Dockerfile"
+    mode: '0644'
+
+# Démarrage des applications
+- name: Démarrage backend
+  shell: |
+    cd {{ ansible_env.PWD }}
+    docker compose up -d backend || docker-compose up -d backend
+
+- name: Attente backend
+  wait_for:
+    port: 4000
+    host: localhost
+    timeout: 120
+
+- name: Démarrage frontend
+  shell: |
+    cd {{ ansible_env.PWD }}
+    docker compose up -d frontend || docker-compose up -d frontend
+
+- name: Attente frontend
+  wait_for:
+    port: 3000
+    host: localhost
+    timeout: 120
+
+# Démarrage Nginx
+- name: Démarrage Nginx
+  shell: |
+    cd {{ ansible_env.PWD }}
+    docker compose up -d nginx || docker-compose up -d nginx
+
+- name: Attente Nginx
+  wait_for:
+    port: 80
+    host: localhost
+    timeout: 30
+
+# Test des applications
+- name: Test backend
+  uri:
+    url: http://localhost:8080/health
+    method: GET
+    timeout: 10
+  register: backend_health
+
+- name: Test frontend
+  uri:
+    url: http://localhost:3000
+    method: GET
+    timeout: 10
+  register: frontend_health
+
+# Affichage du statut
+- name: Statut applications
+  debug:
+    msg: |
+      ✅ Applications déployées :
+      - Backend: {{ 'OK' if backend_health.status == 200 else 'ERREUR' }}
+      - Frontend: {{ 'OK' if frontend_health.status == 200 else 'ERREUR' }}

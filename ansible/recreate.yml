@@ -1,0 +1,83 @@
+---
+- name: Recréation complète des services SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    - name: Avertissement
+      debug:
+        msg: |
+          ⚠️  ATTENTION : Cette opération va supprimer TOUTES les données !
+          
+          Cette action va :
+          - Supprimer tous les conteneurs existants
+          - Effacer toutes les données de la base PostgreSQL
+          - Effacer tous les secrets Vault
+          - Recréer tous les services depuis zéro
+          
+          Vous avez 10 secondes pour annuler avec Ctrl+C...
+
+    - name: Pause de sécurité
+      pause:
+        seconds: 10
+
+    # Arrêt et suppression complète
+    - name: Arrêt de tous les services
+      shell: docker compose down -v
+      args:
+        chdir: "{{ project_dir }}"
+      failed_when: false
+
+    - name: Suppression des conteneurs individuels
+      shell: |
+        docker stop {{ item }} || true
+        docker rm {{ item }} || true
+      loop:
+        - postgres
+        - redis
+        - vault
+      failed_when: false
+
+    - name: Suppression des volumes Docker
+      shell: |
+        docker volume rm sit_inov_website_postgres_data || true
+        docker volume rm sit_inov_website_redis_data || true
+        docker volume prune -f || true
+      failed_when: false
+
+    - name: Nettoyage des répertoires Vault
+      file:
+        path: "{{ ansible_env.PWD }}/ansible/vault-ansible"
+        state: absent
+      failed_when: false
+
+    # Recréation
+    - name: Recréation des services
+      shell: docker compose up -d
+      args:
+        chdir: "{{ project_dir }}"
+
+    - name: Attente des services
+      wait_for:
+        port: "{{ item }}"
+        host: localhost
+        timeout: 60
+      loop:
+        - 5432  # PostgreSQL
+        - 6379  # Redis
+
+    - name: Résumé
+      debug:
+        msg: |
+          ✅ Services recréés avec succès !
+          
+          🔄 Toutes les données ont été effacées
+          📦 Nouveaux conteneurs créés
+          
+          🔧 Prochaines étapes :
+          1. Déployer Vault: ./launch.sh vault
+          2. Déployer les applications: ansible-playbook -i ansible/inventory.yml ansible/applications.yml
+          3. Vérifier: ansible-playbook -i ansible/inventory.yml ansible/status.yml

@@ -1,0 +1,69 @@
+---
+- name: Arrêt des applications SIT Innovation (préservation des services Docker)
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Arrêt des applications Node.js uniquement
+    - name: Arrêt des processus frontend
+      shell: pkill -f "next" || true
+      failed_when: false
+      tags: stop
+
+    - name: Arrêt des processus backend
+      shell: pkill -f "nest" || true
+      failed_when: false
+      tags: stop
+
+    - name: Arrêt des processus npm
+      shell: pkill -f "npm.*dev" || true
+      failed_when: false
+      tags: stop
+
+    # Nettoyage des ports
+    - name: Nettoyage port 3000
+      shell: lsof -ti:3000 | xargs kill -9 || true
+      failed_when: false
+      tags: cleanup
+
+    - name: Nettoyage port 4000
+      shell: lsof -ti:4000 | xargs kill -9 || true
+      failed_when: false
+      tags: cleanup
+
+    # Nettoyage des logs
+    - name: Nettoyage logs temporaires
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/backend.log
+        - /tmp/frontend.log
+      tags: cleanup
+
+    # Vérification des services Docker
+    - name: Vérification services Docker
+      command: docker ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}"
+      register: docker_status
+      failed_when: false
+
+    # Confirmation
+    - name: Confirmation arrêt
+      debug:
+        msg: |
+          ✅ Applications SIT Innovation arrêtées !
+          
+          🧹 Nettoyage effectué :
+          - Processus Node.js arrêtés
+          - Ports 3000 et 4000 libérés
+          - Logs temporaires supprimés
+          
+          🐳 Services Docker préservés :
+          {{ docker_status.stdout }}
+          
+          🚀 Redémarrage apps: ansible-playbook -i ansible/inventory.yml ansible/applications.yml
+          🛑 Arrêt complet: ./launch.sh stop
+      tags: summary

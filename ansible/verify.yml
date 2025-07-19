@@ -1,0 +1,72 @@
+---
+# Vérifications finales
+# Vérification des services Docker
+- name: Vérification conteneurs Docker
+  command: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+  register: docker_status
+
+# Tests de santé
+- name: Test Vault
+  uri:
+    url: http://localhost:8200/v1/sys/health
+    method: GET
+    timeout: 5
+  register: vault_health
+  failed_when: false
+
+- name: Test PostgreSQL
+  command: docker exec postgres pg_isready -U postgres
+  register: postgres_health
+  failed_when: false
+
+- name: Test Redis
+  command: docker exec redis redis-cli ping
+  register: redis_health
+  failed_when: false
+
+- name: Test Backend
+  uri:
+    url: http://localhost:4000/health
+    method: GET
+    timeout: 5
+  register: backend_health
+  failed_when: false
+
+- name: Test Frontend
+  uri:
+    url: http://localhost:3000
+    method: GET
+    timeout: 5
+  register: frontend_health
+  failed_when: false
+
+- name: Test Nginx
+  uri:
+    url: http://localhost
+    method: GET
+    timeout: 5
+  register: nginx_health
+  failed_when: false
+
+# Affichage des résultats
+- name: Résultats des tests
+  debug:
+    msg: |
+      🔍 Vérifications finales :
+      
+      📊 Statut des services :
+      - 🔐 Vault: {{ 'OK' if vault_health.status == 200 else 'ERREUR' }}
+      - 🗄️ PostgreSQL: {{ 'OK' if 'accepting connections' in postgres_health.stdout else 'ERREUR' }}
+      - 📦 Redis: {{ 'OK' if redis_health.stdout == 'PONG' else 'ERREUR' }}
+      - 🔧 Backend: {{ 'OK' if backend_health.status == 200 else 'ERREUR' }}
+      - 🌐 Frontend: {{ 'OK' if frontend_health.status == 200 else 'ERREUR' }}
+      - 🔀 Nginx: {{ 'OK' if nginx_health.status == 200 else 'ERREUR' }}
+      
+      🐳 Conteneurs Docker :
+      {{ docker_status.stdout }}
+      
+      🔗 URLs disponibles :
+      - Application: http://localhost
+      - Backend API: http://localhost:4000
+      - Frontend: http://localhost:3000
+      - Vault: http://localhost:8200
