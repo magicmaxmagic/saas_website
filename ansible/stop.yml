@@ -1,0 +1,68 @@
+---
+- name: Arrêt complet SIT Inov
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Arrêt des processus Node.js
+    - name: Arrêt des processus frontend
+      shell: pkill -f "next" || true
+      failed_when: false
+      tags: stop
+
+    - name: Arrêt des processus backend
+      shell: pkill -f "nest" || true
+      failed_when: false
+      tags: stop
+
+    - name: Arrêt des processus npm
+      shell: pkill -f "npm.*dev" || true
+      failed_when: false
+      tags: stop
+
+    # Nettoyage des ports
+    - name: Nettoyage port 3000
+      shell: lsof -ti:3000 | xargs kill -9 || true
+      failed_when: false
+      tags: cleanup
+
+    - name: Nettoyage port 4000
+      shell: lsof -ti:4000 | xargs kill -9 || true
+      failed_when: false
+      tags: cleanup
+
+    # Arrêt des services Docker (pause, pas suppression)
+    - name: Arrêt services Docker
+      shell: docker compose stop
+      args:
+        chdir: "{{ project_dir }}"
+      failed_when: false
+      tags: docker
+
+    # Nettoyage des logs
+    - name: Nettoyage logs temporaires
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/backend.log
+        - /tmp/frontend.log
+      tags: cleanup
+
+    # Confirmation
+    - name: Confirmation arrêt
+      debug:
+        msg: |
+          ✅ Application SIT Inov arrêtée avec succès !
+          
+          🧹 Nettoyage effectué :
+          - Processus Node.js arrêtés
+          - Ports 3000 et 4000 libérés
+          - Services Docker mis en pause (données préservées)
+          - Logs temporaires supprimés
+          
+          🚀 Redémarrage: ansible-playbook -i ansible/inventory.yml ansible/start.yml
+      tags: summary

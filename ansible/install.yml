@@ -1,0 +1,96 @@
+---
+- name: Installation complète SIT Inov
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Installation des prérequis système
+    - name: Vérification Homebrew (macOS)
+      command: brew --version
+      register: brew_check
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family == "Darwin"
+
+    - name: Installation Node.js via Homebrew
+      homebrew:
+        name: node@20
+        state: present
+      when: ansible_os_family == "Darwin" and brew_check.rc == 0
+
+    - name: Installation Docker Desktop
+      debug:
+        msg: "Veuillez installer Docker Desktop depuis https://www.docker.com/products/docker-desktop/"
+      when: ansible_os_family == "Darwin"
+
+    # Installation Ansible si nécessaire
+    - name: Vérification Ansible
+      command: ansible --version
+      register: ansible_check
+      failed_when: false
+      changed_when: false
+
+    - name: Installation Ansible via pip
+      pip:
+        name: ansible
+        state: present
+      when: ansible_check.rc != 0
+
+    # Création de la structure des répertoires
+    - name: Création répertoires logs
+      file:
+        path: "{{ project_dir }}/logs"
+        state: directory
+        mode: '0755'
+
+    - name: Création répertoires tmp
+      file:
+        path: "{{ project_dir }}/tmp"
+        state: directory
+        mode: '0755'
+
+    # Configuration Git
+    - name: Vérification dépôt Git
+      stat:
+        path: "{{ project_dir }}/.git"
+      register: git_repo
+
+    - name: Initialisation Git si nécessaire
+      git:
+        repo: "{{ project_dir }}"
+        dest: "{{ project_dir }}"
+      when: not git_repo.stat.exists
+
+    # Permissions des scripts
+    - name: Permissions scripts
+      file:
+        path: "{{ item }}"
+        mode: '0755'
+      loop:
+        - "{{ project_dir }}/start.sh"
+        - "{{ project_dir }}/stop.sh"
+        - "{{ project_dir }}/scripts/install.sh"
+        - "{{ project_dir }}/scripts/dev.sh"
+        - "{{ project_dir }}/scripts/build.sh"
+        - "{{ project_dir }}/vault-ansible/deploy-vault.sh"
+        - "{{ project_dir }}/vault-ansible/create-all-secrets.sh"
+        - "{{ project_dir }}/ansible/deploy.sh"
+
+    # Configuration finale
+    - name: Message final
+      debug:
+        msg: |
+          ✅ Installation terminée !
+          
+          🚀 Démarrage automatique :
+          ansible-playbook -i ansible/inventory.yml ansible/start.yml
+          
+          🛑 Arrêt :
+          ansible-playbook -i ansible/inventory.yml ansible/stop.yml
+          
+          📚 Autres commandes :
+          - Installation complète: ansible-playbook ansible/install.yml
+          - Déploiement production: ansible-playbook -i ansible/inventory.yml ansible/deploy.yml --limit production

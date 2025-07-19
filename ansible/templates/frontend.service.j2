@@ -1,0 +1,34 @@
+[Unit]
+Description=SIT Inov Frontend
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_user }}
+WorkingDirectory={{ app_directory }}/src/apps/frontend
+Environment=NODE_ENV=production
+EnvironmentFile={{ app_directory }}/src/.env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={{ app_name }}-frontend
+
+# Limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ app_directory }}
+ReadWritePaths=/tmp
+ReadWritePaths=/var/log/{{ app_name }}
+
+[Install]
+WantedBy=multi-user.target

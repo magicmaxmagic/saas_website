@@ -1,0 +1,31 @@
+---
+- name: Redémarrage SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Arrêt complet
+    - name: Arrêt complet
+      include_tasks: stop-full.yml
+      tags: [stop]
+
+    # Attente
+    - name: Attente après arrêt
+      wait_for:
+        timeout: 5
+
+    # Redémarrage
+    - name: Redémarrage complet
+      include_tasks: deploy-full.yml
+      tags: [start]
+
+    - name: Redémarrage terminé
+      debug:
+        msg: |
+          🔄 Redémarrage terminé !
+          
+          🌐 Application : http://localhost
+          🔐 Vault : http://localhost:8200

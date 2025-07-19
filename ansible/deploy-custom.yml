@@ -1,0 +1,83 @@
+---
+- name: Déploiement personnalisé SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  vars_prompt:
+    - name: deploy_vault
+      prompt: "Déployer Vault avec Ansible ? (true/false)"
+      default: "true"
+      private: no
+      
+    - name: deploy_infrastructure
+      prompt: "Déployer l'infrastructure (PostgreSQL, Redis, Nginx) ? (true/false)"
+      default: "true"
+      private: no
+      
+    - name: deploy_applications
+      prompt: "Déployer les applications (Backend, Frontend) ? (true/false)"
+      default: "true"
+      private: no
+      
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Phase 1: Vérifications système
+    - name: Vérification prérequis
+      include_tasks: checks.yml
+      tags: [checks]
+
+    # Phase 2: Installation Vault (conditionnel)
+    - name: Déploiement Vault
+      include_tasks: vault.yml
+      when: deploy_vault | bool
+      tags: [vault]
+
+    # Phase 3: Services d'infrastructure (conditionnel)
+    - name: Services infrastructure
+      include_tasks: infrastructure.yml
+      when: deploy_infrastructure | bool
+      tags: [infrastructure]
+
+    # Phase 4: Applications (conditionnel)
+    - name: Applications
+      include_tasks: applications.yml
+      when: deploy_applications | bool
+      tags: [applications]
+
+    # Phase 5: Vérifications finales
+    - name: Vérifications finales
+      include_tasks: verify.yml
+      tags: [verify]
+
+    # Résumé final
+    - name: Résumé du déploiement personnalisé
+      debug:
+        msg: |
+          🚀 Déploiement SIT Innovation terminé !
+          
+          📊 Composants déployés :
+          - 🔐 Vault : {{ 'http://localhost:8200 (Token: myroot)' if deploy_vault | bool else '❌ Non déployé' }}
+          - 🗄️ PostgreSQL : {{ 'localhost:5432 (postgres/password)' if deploy_infrastructure | bool else '❌ Non déployé' }}
+          - 📦 Redis : {{ 'localhost:6379' if deploy_infrastructure | bool else '❌ Non déployé' }}
+          - 🌐 Frontend : {{ 'http://localhost:3000' if deploy_applications | bool else '❌ Non déployé' }}
+          - 🔧 Backend : {{ 'http://localhost:4000' if deploy_applications | bool else '❌ Non déployé' }}
+          
+          🔗 URLs disponibles :
+          {% if deploy_infrastructure | bool and deploy_applications | bool %}
+          - Application complète: http://localhost
+          {% endif %}
+          {% if deploy_vault | bool %}
+          - Vault: http://localhost:8200
+          {% endif %}
+          {% if deploy_applications | bool %}
+          - Frontend: http://localhost:3000
+          - Backend: http://localhost:4000
+          {% endif %}
+          
+          📋 Commandes utiles :
+          - Arrêt: ansible-playbook -i ansible/inventory.yml ansible/stop.yml
+          - Restart: ansible-playbook -i ansible/inventory.yml ansible/restart.yml
+          - Logs: ansible-playbook -i ansible/inventory.yml ansible/logs.yml
+          - Status: ansible-playbook -i ansible/inventory.yml ansible/status.yml

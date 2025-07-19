@@ -1,0 +1,56 @@
+---
+# Vérifications prérequis
+# Vérification Node.js
+- name: Vérification Node.js
+  command: node --version
+  register: node_version
+  failed_when: node_version.rc != 0
+
+- name: Vérification npm
+  command: npm --version
+  register: npm_version
+  failed_when: npm_version.rc != 0
+
+# Vérification Docker (optionnel - décommentez si nécessaire)
+# - name: Vérification Docker
+#   command: docker --version
+#   register: docker_version
+#   failed_when: docker_version.rc != 0
+
+# - name: Vérification Docker Compose
+#   command: docker-compose --version
+#   register: compose_version
+#   failed_when: compose_version.rc != 0
+
+# Vérification des ports
+- name: Vérification ports disponibles
+  wait_for:
+    port: "{{ item }}"
+    host: localhost
+    timeout: 2
+    state: stopped
+  loop:
+    - 3000  # Frontend
+    - 4000  # Backend
+    - 5432  # PostgreSQL
+    - 6379  # Redis
+    - 8200  # Vault
+  failed_when: false
+
+# Vérification Git
+- name: Vérification Git
+  command: git --version
+  register: git_version
+  failed_when: git_version.rc != 0
+
+# Affichage des versions
+- name: Affichage des versions
+  debug:
+    msg: |
+      ✅ Prérequis validés :
+      - Node.js: {{ node_version.stdout }}
+      - npm: {{ npm_version.stdout }}
+      - Git: {{ git_version.stdout }}
+      
+      📝 Note: Vérifications Docker désactivées (supposées déjà installées)
+      💡 Pour activer les vérifications Docker, décommentez les lignes correspondantes

@@ -1,0 +1,337 @@
+---
+- name: Déploiement complet SIT Inov avec Vault
+  hosts: all
+  become: yes
+  vars:
+    app_name: sit_inov_website
+    app_user: sit_inov
+    app_directory: /opt/sit_inov
+    vault_version: "1.15.2"
+    node_version: "18.x"
+    postgres_version: "15"
+    redis_version: "7.0"
+    nginx_version: "stable"
+    
+  tasks:
+    - name: Mise à jour du système
+      apt:
+        update_cache: yes
+        upgrade: dist
+      when: ansible_os_family == "Debian"
+
+    - name: Installation des dépendances système
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - unzip
+          - software-properties-common
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - python3
+          - python3-pip
+          - certbot
+          - python3-certbot-nginx
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # Installation Docker
+    - name: Ajout de la clé GPG Docker
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Ajout du dépôt Docker
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Installation Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # Installation Node.js
+    - name: Ajout du dépôt Node.js
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_{{ node_version }} | bash -
+      when: ansible_os_family == "Debian"
+
+    - name: Installation Node.js
+      apt:
+        name: nodejs
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # Installation PostgreSQL
+    - name: Installation PostgreSQL
+      apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # Installation Redis
+    - name: Installation Redis
+      apt:
+        name:
+          - redis-server
+          - redis-tools
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # Installation Nginx
+    - name: Installation Nginx
+      apt:
+        name: nginx
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # Configuration utilisateur
+    - name: Création de l'utilisateur application
+      user:
+        name: "{{ app_user }}"
+        system: yes
+        shell: /bin/bash
+        home: "{{ app_directory }}"
+        create_home: yes
+        groups: docker
+        append: yes
+
+    # Configuration PostgreSQL
+    - name: Configuration PostgreSQL
+      postgresql_user:
+        name: "{{ app_user }}"
+        password: "{{ vault_db_password }}"
+        role_attr_flags: CREATEDB
+      become_user: postgres
+
+    - name: Création de la base de données
+      postgresql_db:
+        name: "{{ app_name }}"
+        owner: "{{ app_user }}"
+        encoding: UTF8
+        lc_collate: fr_FR.UTF-8
+        lc_ctype: fr_FR.UTF-8
+      become_user: postgres
+
+    # Configuration Redis
+    - name: Configuration Redis
+      template:
+        src: redis.conf.j2
+        dest: /etc/redis/redis.conf
+        backup: yes
+      notify: restart redis
+
+    # Installation HashiCorp Vault
+    - name: Téléchargement de Vault
+      get_url:
+        url: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
+        dest: /tmp/vault.zip
+        mode: '0644'
+
+    - name: Extraction de Vault
+      unarchive:
+        src: /tmp/vault.zip
+        dest: /usr/local/bin
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Création des répertoires Vault
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: vault
+        group: vault
+        mode: '0755'
+      loop:
+        - /opt/vault
+        - /opt/vault/data
+        - /opt/vault/config
+        - /opt/vault/logs
+
+    - name: Création de l'utilisateur Vault
+      user:
+        name: vault
+        system: yes
+        shell: /bin/false
+        home: /opt/vault
+        create_home: no
+
+    - name: Configuration Vault
+      template:
+        src: vault.hcl.j2
+        dest: /opt/vault/config/vault.hcl
+        owner: vault
+        group: vault
+        mode: '0644'
+      notify: restart vault
+
+    - name: Service systemd Vault
+      template:
+        src: vault.service.j2
+        dest: /etc/systemd/system/vault.service
+      notify:
+        - reload systemd
+        - restart vault
+
+    # Déploiement application
+    - name: Clonage du dépôt
+      git:
+        repo: "{{ app_repo_url }}"
+        dest: "{{ app_directory }}/src"
+        version: "{{ app_version | default('main') }}"
+        force: yes
+      become_user: "{{ app_user }}"
+
+    - name: Installation des dépendances
+      npm:
+        path: "{{ app_directory }}/src"
+        state: present
+      become_user: "{{ app_user }}"
+
+    - name: Configuration de l'environnement
+      template:
+        src: .env.j2
+        dest: "{{ app_directory }}/src/.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0600'
+
+    # Build de l'application
+    - name: Build du backend
+      shell: |
+        cd {{ app_directory }}/src/apps/backend
+        npm run build
+      become_user: "{{ app_user }}"
+
+    - name: Build du frontend
+      shell: |
+        cd {{ app_directory }}/src/apps/frontend
+        npm run build
+      become_user: "{{ app_user }}"
+
+    # Migration de la base de données
+    - name: Migration Prisma
+      shell: |
+        cd {{ app_directory }}/src/apps/backend
+        npm run prisma:migrate:deploy
+      become_user: "{{ app_user }}"
+
+    # Configuration Nginx
+    - name: Configuration Nginx
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/sites-available/{{ app_name }}
+        backup: yes
+      notify: restart nginx
+
+    - name: Activation du site
+      file:
+        src: /etc/nginx/sites-available/{{ app_name }}
+        dest: /etc/nginx/sites-enabled/{{ app_name }}
+        state: link
+      notify: restart nginx
+
+    - name: Suppression du site par défaut
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: restart nginx
+
+    # Services systemd
+    - name: Service backend
+      template:
+        src: backend.service.j2
+        dest: /etc/systemd/system/{{ app_name }}-backend.service
+      notify:
+        - reload systemd
+        - restart backend
+
+    - name: Service frontend
+      template:
+        src: frontend.service.j2
+        dest: /etc/systemd/system/{{ app_name }}-frontend.service
+      notify:
+        - reload systemd
+        - restart frontend
+
+    # Démarrage des services
+    - name: Activation des services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      loop:
+        - vault
+        - "{{ app_name }}-backend"
+        - "{{ app_name }}-frontend"
+        - nginx
+        - postgresql
+        - redis
+
+    # Configuration pare-feu
+    - name: Configuration UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+      loop:
+        - '22'
+        - '80'
+        - '443'
+        - '8200'  # Vault
+
+    - name: Activation UFW
+      ufw:
+        state: enabled
+
+    # SSL/TLS avec Let's Encrypt
+    - name: Génération certificat SSL
+      shell: |
+        certbot --nginx -d {{ app_domain }} --non-interactive --agree-tos --email {{ admin_email }}
+      when: app_domain is defined and admin_email is defined
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+
+    - name: restart vault
+      systemd:
+        name: vault
+        state: restarted
+
+    - name: restart backend
+      systemd:
+        name: "{{ app_name }}-backend"
+        state: restarted
+
+    - name: restart frontend
+      systemd:
+        name: "{{ app_name }}-frontend"
+        state: restarted
+
+    - name: restart redis
+      systemd:
+        name: redis
+        state: restarted
+
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes

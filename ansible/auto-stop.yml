@@ -1,0 +1,73 @@
+---
+- name: Arrêt automatique complet SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Arrêt des services Node.js
+    - name: Arrêt backend via PID
+      shell: |
+        if [ -f {{ project_dir }}/logs/backend.pid ]; then
+          kill -TERM $(cat {{ project_dir }}/logs/backend.pid) 2>/dev/null || true
+          rm -f {{ project_dir }}/logs/backend.pid
+        fi
+      failed_when: false
+
+    - name: Arrêt frontend via PID
+      shell: |
+        if [ -f {{ project_dir }}/logs/frontend.pid ]; then
+          kill -TERM $(cat {{ project_dir }}/logs/frontend.pid) 2>/dev/null || true
+          rm -f {{ project_dir }}/logs/frontend.pid
+        fi
+      failed_when: false
+
+    # Arrêt des processus sur les ports
+    - name: Arrêt des processus sur port 4000
+      shell: |
+        for pid in $(lsof -ti :4000); do
+          kill -TERM $pid 2>/dev/null || true
+        done
+      failed_when: false
+
+    - name: Arrêt des processus sur port 3000
+      shell: |
+        for pid in $(lsof -ti :3000); do
+          kill -TERM $pid 2>/dev/null || true
+        done
+      failed_when: false
+
+    # Arrêt des services Docker (sans suppression des données)
+    - name: Arrêt services Docker
+      shell: docker compose stop
+      args:
+        chdir: "{{ project_dir }}"
+      failed_when: false
+
+    # Vérification
+    - name: Vérification arrêt
+      command: docker ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}"
+      register: docker_status
+
+    - name: Vérification ports
+      shell: |
+        echo "Port 3000: $(lsof -ti :3000 | wc -l) processus"
+        echo "Port 4000: $(lsof -ti :4000 | wc -l) processus"
+      register: port_status
+
+    - name: Résultat arrêt
+      debug:
+        msg: |
+          🛑 Arrêt automatique terminé
+          
+          🐳 Conteneurs Docker :
+          {{ docker_status.stdout }}
+          
+          🔌 État des ports :
+          {{ port_status.stdout }}
+          
+          💾 Les données sont préservées
+          
+          🔄 Pour redémarrer : ansible-playbook -i ansible/inventory.yml ansible/auto-start.yml

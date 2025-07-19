@@ -1,0 +1,58 @@
+---
+# Logs SIT Innovation
+# Logs conteneurs
+- name: Logs Backend
+  command: docker logs backend --tail 50
+  register: backend_logs
+  failed_when: false
+
+- name: Logs Frontend
+  command: docker logs frontend --tail 50
+  register: frontend_logs
+  failed_when: false
+
+- name: Logs PostgreSQL
+  command: docker logs postgres --tail 30
+  register: postgres_logs
+  failed_when: false
+
+- name: Logs Redis
+  command: docker logs redis --tail 30
+  register: redis_logs
+  failed_when: false
+
+- name: Logs Vault
+  command: docker logs vault --tail 30
+  register: vault_logs
+  failed_when: false
+
+# Affichage
+- name: Logs Backend
+  debug:
+    msg: |
+      🔧 Logs Backend (50 dernières lignes) :
+      {{ backend_logs.stdout }}
+
+- name: Logs Frontend
+  debug:
+    msg: |
+      🌐 Logs Frontend (50 dernières lignes) :
+      {{ frontend_logs.stdout }}
+
+- name: Logs PostgreSQL
+  debug:
+    msg: |
+      🗄️ Logs PostgreSQL (30 dernières lignes) :
+      {{ postgres_logs.stdout }}
+
+- name: Logs Redis
+  debug:
+    msg: |
+      📦 Logs Redis (30 dernières lignes) :
+      {{ redis_logs.stdout }}
+
+- name: Logs Vault
+  debug:
+    msg: |
+      🔐 Logs Vault (30 dernières lignes) :
+      {{ vault_logs.stdout }}

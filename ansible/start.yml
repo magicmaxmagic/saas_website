@@ -1,0 +1,253 @@
+---
+- name: Installation et démarrage complet SIT Inov
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    node_version: "20.x"
+    
+  tasks:
+    - name: Vérification Node.js
+      command: node --version
+      register: node_version_check
+      failed_when: false
+      changed_when: false
+      
+    - name: Affichage version Node.js
+      debug:
+        msg: "Node.js version: {{ node_version_check.stdout }}"
+
+    - name: Arrêt des services Docker existants
+      shell: docker compose down
+      args:
+        chdir: "{{ project_dir }}"
+      failed_when: false
+      tags: docker
+
+    - name: Démarrage PostgreSQL
+      shell: docker compose up -d postgres
+      args:
+        chdir: "{{ project_dir }}"
+      register: postgres_start_result
+      failed_when: false
+      tags: docker
+
+
+    - name: Suppression des données Redis (reset local)
+      shell: |
+        echo "🧹 Suppression des données Redis locales..."
+        rm -rf {{ project_dir }}/redis-data/* || true
+      args:
+        chdir: "{{ project_dir }}"
+      tags: docker
+
+    - name: Création du dossier de log Redis si besoin
+      file:
+        path: "{{ project_dir }}/redis-data/redis"
+        state: directory
+        mode: '0777'
+      tags: docker
+
+    - name: Copie de la config redis.conf (logfile désactivé)
+      copy:
+        src: "{{ project_dir }}/redis.conf"
+        dest: "{{ project_dir }}/redis-data/redis.conf"
+        mode: '0644'
+      tags: docker
+
+
+    - name: Attente PostgreSQL
+      shell: |
+        echo "🐘 Attente de PostgreSQL..."
+        sleep 5
+        for i in {1..20}; do
+          if docker exec prevent-postgres pg_isready -U postgres -d sit_inov_dev >/dev/null 2>&1; then
+            echo "✅ PostgreSQL prêt"
+            exit 0
+          fi
+          echo "⏳ Tentative $i/20..."
+          sleep 2
+        done
+        echo "⚠️ PostgreSQL prend du temps, on continue..."
+        exit 0
+      register: postgres_wait_result
+      failed_when: false
+      tags: docker
+
+    - name: Arrêt Redis existant
+      shell: |
+        docker stop redis || true
+        docker rm redis || true
+      tags: docker
+
+    - name: Démarrage Redis (sans config personnalisée)
+      shell: |
+        echo "🔴 Démarrage Redis..."
+        docker run -d --name redis --rm -p 6379:6379 redis:7-alpine redis-server --logfile ""
+      register: redis_start_result
+      failed_when: false
+      tags: docker
+    - name: Attente Redis
+      shell: |
+        echo "🔴 Attente de Redis..."
+        sleep 5
+        for i in {1..20}; do
+          if docker exec redis redis-cli ping >/dev/null 2>&1; then
+            echo "✅ Redis prêt"
+            exit 0
+          fi
+          echo "⏳ Tentative $i/20..."
+          sleep 2
+        done
+        echo "❌ Redis ne démarre pas, vérifiez les logs avec 'docker logs redis'"
+        exit 1
+      register: redis_wait_result
+      failed_when: redis_wait_result.rc != 0
+      tags: docker
+
+    - name: Vérification services Docker
+      shell: |
+        echo "📊 État des services Docker :"
+        docker ps
+        echo ""
+        echo "🧪 Tests de connexion :"
+        if docker exec prevent-postgres pg_isready -U postgres -d sit_inov_dev >/dev/null 2>&1; then
+          echo "✅ PostgreSQL : OK"
+        else
+          echo "❌ PostgreSQL : ERREUR"
+        fi
+        if docker exec redis redis-cli ping >/dev/null 2>&1; then
+          echo "✅ Redis : OK"
+        else
+          echo "❌ Redis : ERREUR"
+        fi
+      register: docker_status
+      failed_when: false
+      tags: docker
+
+    - name: Affichage état Docker
+      debug:
+        msg: "{{ docker_status.stdout }}"
+      when: docker_status.stdout is defined
+
+    - name: Installation dépendances backend
+      shell: |
+        echo "📦 Installation des dépendances backend..."
+        cd {{ project_dir }}/apps/backend
+        npm install
+      register: backend_deps_result
+      tags: install
+
+    - name: Génération client Prisma
+      command: npm run db:generate
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+      environment:
+        DATABASE_URL: "postgresql://postgres:password@localhost:5432/sit_inov_dev"
+      tags: database
+
+    - name: Démarrage backend
+      shell: |
+        pkill -f "nest start" || true
+        pkill -f "nodemon" || true
+        sleep 2
+        mkdir -p {{ project_dir }}/logs
+        cd {{ project_dir }}/apps/backend
+        nohup npm run start:dev > {{ project_dir }}/logs/backend.log 2>&1 &
+        echo $! > {{ project_dir }}/logs/backend.pid
+        sleep 3
+        echo "✅ Backend démarré"
+      environment:
+        DATABASE_URL: "postgresql://postgres:password@localhost:5432/sit_inov_dev"
+        JWT_SECRET: "your-secret-key-here"
+        STRIPE_SECRET_KEY: "sk_test_your_stripe_secret_key_here"
+        REDIS_URL: "redis://localhost:6379"
+        VAULT_URL: "http://localhost:8200"
+      register: backend_start_result
+      tags: start
+
+    - name: Attente du backend
+      shell: |
+        echo "🚀 Attente du backend NestJS..."
+        sleep 5
+        for i in {1..20}; do
+          if curl -s http://localhost:4000/api/v1/health >/dev/null 2>&1; then
+            echo "✅ Backend prêt sur http://localhost:4000"
+            exit 0
+          fi
+          echo "⏳ Tentative $i/20..."
+          sleep 3
+        done
+        echo "⚠️ Backend pas encore prêt"
+        exit 1
+      register: backend_wait
+      failed_when: false
+      tags: start
+
+    - name: Installation dépendances frontend
+      shell: |
+        echo "📦 Installation des dépendances frontend..."
+        cd {{ project_dir }}/apps/frontend
+        npm install
+      register: frontend_deps_result
+      tags: install
+
+    - name: Démarrage frontend
+      shell: |
+        pkill -f "next-server" || true
+        pkill -f "next dev" || true
+        sleep 2
+        mkdir -p {{ project_dir }}/logs
+        cd {{ project_dir }}/apps/frontend
+        nohup npm run dev > {{ project_dir }}/logs/frontend.log 2>&1 &
+        echo $! > {{ project_dir }}/logs/frontend.pid
+        sleep 3
+        echo "✅ Frontend démarré"
+      environment:
+        NEXT_PUBLIC_API_URL: "http://localhost:4000"
+        NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+        NEXTAUTH_URL: "http://localhost:3000"
+        NEXTAUTH_SECRET: "dev_nextauth_secret"
+      register: frontend_start_result
+      tags: start
+
+    - name: Attente du frontend
+      shell: |
+        echo "🌐 Attente du frontend Next.js..."
+        sleep 5
+        for i in {1..20}; do
+          if curl -s http://localhost:3000 >/dev/null 2>&1; then
+            echo "✅ Frontend prêt sur http://localhost:3000"
+            exit 0
+          fi
+          echo "⏳ Tentative $i/20..."
+          sleep 3
+        done
+        echo "⚠️ Frontend pas encore prêt"
+        exit 1
+      register: frontend_wait
+      failed_when: false
+      tags: start
+
+    - name: Résumé du démarrage
+      debug:
+        msg: |
+          🚀 Application SIT Innovation - État final
+          
+          🌐 Services disponibles :
+          - Frontend: http://localhost:3000 ({{ '✅ OK' if frontend_wait.rc == 0 else '⚠️ VÉRIFIER' }})
+          - Backend: http://localhost:4000 ({{ '✅ OK' if backend_wait.rc == 0 else '⚠️ VÉRIFIER' }})
+          - PostgreSQL: localhost:5432 ({{ '✅ OK' if postgres_wait_result.rc == 0 else '⚠️ VÉRIFIER' }})
+          - Redis: localhost:6379 ({{ '✅ OK' if redis_wait_result.rc == 0 else '⚠️ VÉRIFIER' }})
+          
+          📋 Logs en temps réel :
+          - Backend: tail -f {{ project_dir }}/logs/backend.log
+          - Frontend: tail -f {{ project_dir }}/logs/frontend.log
+          
+          🛠️ Commandes utiles :
+          - Arrêt sécurisé: ./launch.sh stop
+          - Statut: ./launch.sh status
+          - Logs: ./launch.sh logs
+          - Redémarrage: ./launch.sh restart
+      tags: summary

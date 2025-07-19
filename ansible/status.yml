@@ -1,0 +1,54 @@
+---
+- name: Statut SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  
+  tasks:
+    # Conteneurs Docker
+    - name: Statut conteneurs
+      command: docker ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
+      register: docker_status
+
+    # Tests rapides
+    - name: Test Vault
+      uri:
+        url: http://localhost:8200/v1/sys/health
+        method: GET
+        timeout: 2
+      register: vault_test
+      failed_when: false
+
+    - name: Test Backend
+      uri:
+        url: http://localhost:4000/health
+        method: GET
+        timeout: 2
+      register: backend_test
+      failed_when: false
+
+    - name: Test Frontend
+      uri:
+        url: http://localhost:3000
+        method: GET
+        timeout: 2
+      register: frontend_test
+      failed_when: false
+
+    # Affichage
+    - name: Statut général
+      debug:
+        msg: |
+          📊 Statut SIT Innovation
+          
+          🐳 Conteneurs :
+          {{ docker_status.stdout }}
+          
+          🔍 Services :
+          - 🔐 Vault: {{ 'OK' if vault_test.status == 200 else 'ERREUR' }}
+          - 🔧 Backend: {{ 'OK' if backend_test.status == 200 else 'ERREUR' }}
+          - 🌐 Frontend: {{ 'OK' if frontend_test.status == 200 else 'ERREUR' }}
+          
+          🔗 URLs :
+          - Application: http://localhost
+          - Vault: http://localhost:8200

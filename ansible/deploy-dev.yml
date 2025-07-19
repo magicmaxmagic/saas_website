@@ -1,0 +1,92 @@
+---
+- name: Déploiement applications sans Docker
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Phase 1: Vérifications système
+    - name: Vérification prérequis
+      include_tasks: checks.yml
+      tags: [checks]
+
+    # Installation des dépendances backend
+    - name: Installation dépendances backend
+      npm:
+        path: "{{ project_dir }}/apps/backend"
+        state: present
+        production: no
+
+    # Installation des dépendances frontend
+    - name: Installation dépendances frontend
+      npm:
+        path: "{{ project_dir }}/apps/frontend"
+        state: present
+        production: no
+
+    # Génération Prisma
+    - name: Génération Prisma
+      command: npx prisma generate
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+
+    # Build backend
+    - name: Build backend
+      command: npm run build
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+
+    # Build frontend
+    - name: Build frontend
+      command: npm run build
+      args:
+        chdir: "{{ project_dir }}/apps/frontend"
+
+    # Démarrage backend en développement
+    - name: Démarrage backend (développement)
+      command: npm run start:dev
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+      async: 45
+      poll: 0
+      register: backend_job
+
+    # Démarrage frontend en développement
+    - name: Démarrage frontend (développement)
+      command: npm run dev
+      args:
+        chdir: "{{ project_dir }}/apps/frontend"
+      async: 45
+      poll: 0
+      register: frontend_job
+
+    # Attente des services
+    - name: Attente backend
+      wait_for:
+        port: 4000
+        host: localhost
+        timeout: 60
+
+    - name: Attente frontend
+      wait_for:
+        port: 3000
+        host: localhost
+        timeout: 60
+
+    # Résumé
+    - name: Résumé du déploiement
+      debug:
+        msg: |
+          🚀 Applications déployées en mode développement !
+          
+          🌐 Frontend : http://localhost:3000
+          🔧 Backend : http://localhost:4000
+          
+          📝 Note : Les applications tournent en mode développement
+          ⚠️  Assurez-vous que PostgreSQL et Redis sont déjà démarrés
+          
+          📋 Pour arrêter les applications :
+          - Ctrl+C dans les terminaux
+          - Ou utiliser : pkill -f "npm run"

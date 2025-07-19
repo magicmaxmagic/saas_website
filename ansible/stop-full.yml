@@ -1,0 +1,77 @@
+---
+- name: Arrêt complet SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    - name: Avertissement suppression des données
+      debug:
+        msg: |
+          ⚠️  ATTENTION : Cette opération va SUPPRIMER TOUTES LES DONNÉES !
+          
+          Cette action va :
+          - Arrêter et supprimer tous les conteneurs
+          - Supprimer tous les volumes (données PostgreSQL, Vault, Redis)
+          - Nettoyer les images, réseaux et conteneurs
+          
+          Si vous voulez seulement arrêter les services sans perdre les données,
+          utilisez: ansible-playbook -i ansible/inventory.yml ansible/stop.yml
+
+    - name: Pause de sécurité
+      pause:
+        seconds: 5
+        prompt: "Appuyez sur Ctrl+C pour annuler, ou attendez 5 secondes pour continuer"
+
+    # Arrêt des services principaux
+    - name: Arrêt et suppression services principaux
+      shell: docker compose down -v
+      args:
+        chdir: "{{ project_dir }}"
+      failed_when: false
+
+    # Arrêt Vault
+    - name: Arrêt et suppression Vault
+      shell: docker compose down -v
+      args:
+        chdir: "{{ project_dir }}/ansible/vault-ansible"
+      failed_when: false
+
+    # Nettoyage conteneurs
+    - name: Nettoyage conteneurs
+      command: docker container prune -f
+      failed_when: false
+
+    # Nettoyage images
+    - name: Nettoyage images
+      command: docker image prune -f
+      failed_when: false
+
+    # Nettoyage volumes
+    - name: Nettoyage volumes
+      command: docker volume prune -f
+      failed_when: false
+
+    # Nettoyage réseau
+    - name: Nettoyage réseau
+      command: docker network prune -f
+      failed_when: false
+
+    # Vérification
+    - name: Vérification arrêt
+      command: docker ps -a --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}"
+      register: docker_status
+
+    - name: Résultat arrêt
+      debug:
+        msg: |
+          🛑 Arrêt complet terminé avec suppression des données
+          
+          🐳 Conteneurs restants :
+          {{ docker_status.stdout }}
+          
+          ⚠️  TOUTES LES DONNÉES ONT ÉTÉ SUPPRIMÉES
+          
+          🔄 Pour redémarrer : ./launch.sh start

@@ -1,0 +1,83 @@
+---
+- name: Arrêt sécurisé SIT Innovation (préservation des données)
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Arrêt des applications Node.js
+    - name: Arrêt des processus frontend
+      shell: pkill -f "next" || true
+      failed_when: false
+      tags: stop
+
+    - name: Arrêt des processus backend
+      shell: pkill -f "nest" || true
+      failed_when: false
+      tags: stop
+
+    - name: Arrêt des processus npm
+      shell: pkill -f "npm.*dev" || true
+      failed_when: false
+      tags: stop
+
+    # Nettoyage des ports
+    - name: Nettoyage port 3000
+      shell: lsof -ti:3000 | xargs kill -9 || true
+      failed_when: false
+      tags: cleanup
+
+    - name: Nettoyage port 4000
+      shell: lsof -ti:4000 | xargs kill -9 || true
+      failed_when: false
+      tags: cleanup
+
+    # Arrêt des services Docker (PAUSE uniquement)
+    - name: Pause des services Docker
+      shell: docker compose stop
+      args:
+        chdir: "{{ project_dir }}"
+      failed_when: false
+      tags: docker
+
+    - name: Pause du service Vault
+      shell: docker stop vault || true
+      failed_when: false
+      tags: docker
+
+    # Vérification des conteneurs
+    - name: Vérification des conteneurs
+      command: docker ps -a --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}"
+      register: docker_status
+      failed_when: false
+
+    # Nettoyage des logs
+    - name: Nettoyage logs temporaires
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/backend.log
+        - /tmp/frontend.log
+      tags: cleanup
+
+    # Confirmation
+    - name: Confirmation arrêt
+      debug:
+        msg: |
+          ✅ SIT Innovation mis en pause en sécurité !
+          
+          🧹 Actions effectuées :
+          - Processus Node.js arrêtés
+          - Ports 3000 et 4000 libérés
+          - Services Docker mis en pause (données préservées)
+          - Logs temporaires supprimés
+          
+          🐳 État des conteneurs :
+          {{ docker_status.stdout }}
+          
+          🔄 Redémarrage : ./launch.sh start
+          🛑 Arrêt complet (avec suppression) : ./launch.sh destroy
+      tags: summary

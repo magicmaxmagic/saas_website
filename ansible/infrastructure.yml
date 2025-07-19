@@ -1,0 +1,210 @@
+---
+# Déploiement services infrastructure
+# Arrêt des services existants
+- name: Arrêt services existants
+  shell: |
+    cd {{ ansible_env.PWD }}
+    docker compose down || docker-compose down || true
+  failed_when: false
+
+# Nettoyage des volumes
+- name: Nettoyage volumes Docker
+  command: docker volume prune -f
+  failed_when: false
+
+# Configuration PostgreSQL
+- name: Création répertoire PostgreSQL
+  file:
+    path: "{{ ansible_env.PWD }}/postgres-data"
+    state: directory
+    mode: '0755'
+
+# Configuration Redis
+- name: Configuration Redis
+  copy:
+    content: |
+      # Redis configuration
+      bind 0.0.0.0
+      port 6379
+      requirepass ""
+      
+      # Persistence
+      save 900 1
+      save 300 10
+      save 60 10000
+      
+      # Logs
+      loglevel notice
+      logfile /var/log/redis/redis.log
+      
+      # Memory
+      maxmemory 256mb
+      maxmemory-policy allkeys-lru
+    dest: "{{ ansible_env.PWD }}/redis.conf"
+    mode: '0644'
+
+# Configuration Nginx
+- name: Configuration Nginx
+  copy:
+    content: |
+      upstream backend {
+          server backend:4000;
+      }
+      
+      upstream frontend {
+          server frontend:3000;
+      }
+      
+      server {
+          listen 80;
+          server_name localhost;
+          
+          # Frontend
+          location / {
+              proxy_pass http://frontend;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+          
+          # Backend API
+          location /api {
+              proxy_pass http://backend;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+          
+          # Health check
+          location /health {
+              proxy_pass http://backend;
+              proxy_set_header Host $host;
+          }
+      }
+    dest: "{{ ansible_env.PWD }}/nginx.conf"
+    mode: '0644'
+
+# Configuration Docker Compose
+- name: Configuration Docker Compose
+  copy:
+    content: |
+      services:
+        postgres:
+          image: postgres:15
+          container_name: postgres
+          environment:
+            POSTGRES_DB: sit_inov_dev
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: password
+          ports:
+            - "5432:5432"
+          volumes:
+            - ./postgres-data:/var/lib/postgresql/data
+            - ./init-db:/docker-entrypoint-initdb.d
+          restart: unless-stopped
+          networks:
+            - app-network
+      
+        redis:
+          image: redis:7-alpine
+          container_name: redis
+          ports:
+            - "6379:6379"
+          volumes:
+            - ./redis.conf:/usr/local/etc/redis/redis.conf
+          command: redis-server /usr/local/etc/redis/redis.conf
+          restart: unless-stopped
+          networks:
+            - app-network
+      
+        nginx:
+          image: nginx:alpine
+          container_name: nginx
+          ports:
+            - "80:80"
+          volumes:
+            - ./nginx.conf:/etc/nginx/conf.d/default.conf
+          depends_on:
+            - frontend
+            - backend
+          restart: unless-stopped
+          networks:
+            - app-network
+      
+        backend:
+          build: ./apps/backend
+          container_name: backend
+          ports:
+            - "4000:4000"
+          environment:
+            - NODE_ENV=development
+            - PORT=4000
+            - DATABASE_URL=postgresql://postgres:password@postgres:5432/sit_inov_dev
+            - REDIS_URL=redis://redis:6379
+            - VAULT_URL=http://host.docker.internal:8200
+            - VAULT_TOKEN=myroot
+          depends_on:
+            - postgres
+            - redis
+          restart: unless-stopped
+          networks:
+            - app-network
+      
+        frontend:
+          build: ./apps/frontend
+          container_name: frontend
+          ports:
+            - "3000:3000"
+          environment:
+            - NEXT_PUBLIC_API_URL=http://localhost:4000
+            - NEXTAUTH_URL=http://localhost:3000
+            - NEXTAUTH_SECRET=dev_nextauth_secret
+          depends_on:
+            - backend
+          restart: unless-stopped
+          networks:
+            - app-network
+      
+      networks:
+        app-network:
+          driver: bridge
+    dest: "{{ ansible_env.PWD }}/docker-compose.yml"
+    mode: '0644'
+
+# Démarrage des services
+- name: Démarrage PostgreSQL et Redis
+  shell: |
+    cd {{ ansible_env.PWD }}
+    docker compose up -d postgres redis || docker-compose up -d postgres redis
+
+# Attente des services
+- name: Attente PostgreSQL
+  wait_for:
+    port: 5432
+    host: localhost
+    timeout: 60
+
+- name: Attente Redis
+  wait_for:
+    port: 6379
+    host: localhost
+    timeout: 30
+
+# Test des services
+- name: Test PostgreSQL
+  command: docker exec postgres pg_isready -U postgres
+  register: postgres_test
+
+- name: Test Redis
+  command: docker exec redis redis-cli ping
+  register: redis_test
+
+# Affichage du statut
+- name: Statut infrastructure
+  debug:
+    msg: |
+      ✅ Infrastructure déployée :
+      - PostgreSQL: {{ 'OK' if postgres_test.stdout == '/var/run/postgresql:5432 - accepting connections' else 'ERREUR' }}
+      - Redis: {{ 'OK' if redis_test.stdout == 'PONG' else 'ERREUR' }}

@@ -1,0 +1,296 @@
+---
+- name: Démarrage automatique complet SIT Innovation
+  hosts: localhost
+  connection: local
+  become: no
+  vars:
+    project_dir: "{{ ansible_env.PWD }}"
+    
+  tasks:
+    # Vérifications préliminaires
+    - name: Vérification Node.js
+      command: node --version
+      register: node_version
+      failed_when: false
+
+    - name: Vérification npm
+      command: npm --version
+      register: npm_version
+      failed_when: false
+
+    - name: Vérification Docker
+      command: docker --version
+      register: docker_version
+      failed_when: false
+
+    - name: Affichage des versions
+      debug:
+        msg: |
+          🔧 Versions détectées :
+          - Node.js: {{ node_version.stdout }}
+          - npm: {{ npm_version.stdout }}
+          - Docker: {{ docker_version.stdout }}
+
+    # Arrêt des processus existants
+    - name: Arrêt des processus Node.js sur port 4000
+      shell: |
+        for pid in $(lsof -ti :4000); do
+          kill -9 $pid 2>/dev/null || true
+        done
+      failed_when: false
+
+    - name: Arrêt des processus Node.js sur port 3000
+      shell: |
+        for pid in $(lsof -ti :3000); do
+          kill -9 $pid 2>/dev/null || true
+        done
+      failed_when: false
+
+    # Installation des dépendances
+    - name: Installation dépendances racine
+      npm:
+        path: "{{ project_dir }}"
+        state: present
+      tags: install
+
+    - name: Installation dépendances backend
+      npm:
+        path: "{{ project_dir }}/apps/backend"
+        state: present
+      tags: install
+
+    - name: Installation dépendances frontend
+      npm:
+        path: "{{ project_dir }}/apps/frontend"
+        state: present
+      tags: install
+
+    # Configuration des environnements
+    - name: Création .env backend
+      copy:
+        content: |
+          DATABASE_URL="postgresql://postgres:password@localhost:5432/sit_inov_dev"
+          JWT_SECRET="your-secret-key-here-{{ ansible_date_time.epoch }}"
+          STRIPE_SECRET_KEY="sk_test_your_stripe_secret_key_here"
+          REDIS_URL="redis://localhost:6379"
+          VAULT_URL="http://localhost:8200"
+        dest: "{{ project_dir }}/apps/backend/.env"
+        backup: yes
+
+    - name: Création .env.local frontend
+      copy:
+        content: |
+          NEXT_PUBLIC_API_URL=http://localhost:4000
+          NEXT_PUBLIC_APP_URL=http://localhost:3000
+        dest: "{{ project_dir }}/apps/frontend/.env.local"
+        backup: yes
+
+    # Services Docker
+    - name: Démarrage des services Docker
+      shell: docker compose up -d
+      args:
+        chdir: "{{ project_dir }}"
+      register: docker_start
+      failed_when: false
+
+    - name: Attente démarrage PostgreSQL
+      shell: |
+        for i in {1..60}; do
+          if docker exec prevent-postgres pg_isready -U postgres >/dev/null 2>&1; then
+            echo "PostgreSQL ready"
+            exit 0
+          fi
+          sleep 2
+        done
+        exit 1
+      register: postgres_ready
+      failed_when: postgres_ready.rc != 0
+
+    - name: Attente démarrage Redis
+      shell: |
+        for i in {1..60}; do
+          if docker exec redis redis-cli ping >/dev/null 2>&1; then
+            echo "Redis ready"
+            exit 0
+          fi
+          sleep 2
+        done
+        exit 1
+      register: redis_ready
+      failed_when: redis_ready.rc != 0
+
+    - name: Vérification finale des services
+      shell: |
+        echo "PostgreSQL: $(docker exec prevent-postgres pg_isready -U postgres 2>/dev/null || echo 'NOT READY')"
+        echo "Redis: $(docker exec redis redis-cli ping 2>/dev/null || echo 'NOT READY')"
+      register: services_check
+
+    - name: Affichage état des services
+      debug:
+        msg: |
+          🐳 Services Docker :
+          {{ services_check.stdout }}
+      tags: docker
+
+    # Configuration base de données
+    - name: Génération client Prisma
+      command: npx prisma generate
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+      environment:
+        DATABASE_URL: "postgresql://postgres:password@localhost:5432/sit_inov_dev"
+      tags: prisma
+
+    - name: Migration base de données
+      command: npx prisma migrate deploy
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+      environment:
+        DATABASE_URL: "postgresql://postgres:password@localhost:5432/sit_inov_dev"
+      failed_when: false
+      tags: prisma
+
+    - name: Création des tables si nécessaire
+      command: npx prisma db push
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+      environment:
+        DATABASE_URL: "postgresql://postgres:password@localhost:5432/sit_inov_dev"
+      failed_when: false
+      tags: prisma
+
+    # Corrections des erreurs TypeScript
+    - name: Correction imports auth.controller.ts
+      replace:
+        path: "{{ project_dir }}/apps/backend/src/auth/auth.controller.ts"
+        regexp: 'import \{ Body, Controller, Get, Post, Put, Request, UseGuards \} from'
+        replace: 'import { Body, Controller, Get, Post, Put, Request, UseGuards, UnauthorizedException } from'
+      failed_when: false
+
+    - name: Correction champs manquants dans schema Prisma - ajout lastLogout
+      lineinfile:
+        path: "{{ project_dir }}/apps/backend/prisma/schema.prisma"
+        line: "  lastLogout    DateTime?"
+        insertafter: "model User"
+        state: present
+      failed_when: false
+
+    - name: Correction champs manquants dans schema Prisma - ajout status
+      lineinfile:
+        path: "{{ project_dir }}/apps/backend/prisma/schema.prisma"
+        line: "  status        String?"
+        insertafter: "model Threat"
+        state: present
+      failed_when: false
+
+    - name: Désactivation temporaire du service Vault
+      replace:
+        path: "{{ project_dir }}/apps/backend/src/vault/vault.service.ts"
+        regexp: "import \\* as vault from 'node-vault';"
+        replace: "// import * as vault from 'node-vault'; // Désactivé temporairement"
+      failed_when: false
+
+    - name: Régénération client Prisma après modifications
+      command: npx prisma generate --force
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+      environment:
+        DATABASE_URL: "postgresql://postgres:password@localhost:5432/sit_inov_dev"
+      failed_when: false
+      tags: prisma
+
+    - name: Build du backend
+      shell: |
+        npm run build || {
+          echo "Build échoué, tentative de nettoyage et rebuild..."
+          rm -rf dist node_modules/.cache
+          npm run build
+        }
+      args:
+        chdir: "{{ project_dir }}/apps/backend"
+      environment:
+        DATABASE_URL: "postgresql://postgres:password@localhost:5432/sit_inov_dev"
+      failed_when: false
+      tags: build
+
+    # Démarrage des services avec scripts dédiés
+    - name: Démarrage backend via script
+      shell: "{{ project_dir }}/scripts/start-backend.sh {{ project_dir }}"
+      register: backend_start
+      failed_when: false
+      tags: start
+
+    - name: Démarrage frontend via script
+      shell: "{{ project_dir }}/scripts/start-frontend.sh {{ project_dir }}"
+      register: frontend_start
+      failed_when: false
+      tags: start
+
+    # Vérification finale complète
+    - name: Test des services avec curl
+      shell: |
+        echo "=== Tests des services ==="
+        
+        # Test PostgreSQL
+        if docker exec prevent-postgres pg_isready -U postgres >/dev/null 2>&1; then
+          echo "✅ PostgreSQL: OK"
+        else
+          echo "❌ PostgreSQL: ERREUR"
+        fi
+        
+        # Test Redis
+        if docker exec redis redis-cli ping >/dev/null 2>&1; then
+          echo "✅ Redis: OK"
+        else
+          echo "❌ Redis: ERREUR"
+        fi
+        
+        # Test Backend
+        if curl -s http://localhost:4000/api/v1/health >/dev/null 2>&1; then
+          echo "✅ Backend: OK"
+        else
+          echo "❌ Backend: ERREUR"
+        fi
+        
+        # Test Frontend
+        if curl -s http://localhost:3000 >/dev/null 2>&1; then
+          echo "✅ Frontend: OK"
+        else
+          echo "❌ Frontend: ERREUR"
+        fi
+        
+        echo "=== Processus actifs ==="
+        echo "Port 4000: $(lsof -ti :4000 | wc -l) processus"
+        echo "Port 3000: $(lsof -ti :3000 | wc -l) processus"
+        
+        echo "=== Conteneurs Docker ==="
+        docker ps --format "table {{.Names}}\t{{.Status}}"
+      register: final_tests
+      failed_when: false
+
+    - name: Affichage du statut final détaillé
+      debug:
+        msg: |
+          🚀 Démarrage automatique terminé !
+          
+          {{ final_tests.stdout }}
+          
+          🔗 Services disponibles :
+          - Frontend: http://localhost:3000
+          - Backend API: http://localhost:4000
+          - Health Check: http://localhost:4000/api/v1/health
+          - PostgreSQL: localhost:5432
+          - Redis: localhost:6379
+          
+          📊 Logs en temps réel :
+          - Backend: tail -f {{ project_dir }}/logs/backend.log
+          - Frontend: tail -f {{ project_dir }}/logs/frontend.log
+          
+          🛑 Pour arrêter : ./launch.sh stop
+          📊 Pour le statut : ./launch.sh status
+          📋 Pour les logs : ./launch.sh logs
+          
+          🔧 En cas de problème :
+          - Vérifiez les logs ci-dessus
+          - Redémarrez avec: ./launch.sh restart
+          - Statut détaillé: ./launch.sh status
