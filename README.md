@@ -226,19 +226,26 @@ Le dossier `ansible/` contient tous les playbooks et fichiers nécessaires :
      ```sh
      ansible-vault edit ansible/vault.yml
      ```
+
 3. **Déployer l’infrastructure**
    ```sh
    cd ansible
-   ansible-playbook -i inventory.yml infrastructure.yml
+   # En développement (local)
+   ansible-playbook -i inventory.yml infrastructure.yml --limit localhost
+   # En production (après adaptation de l'inventaire)
+   # ansible-playbook -i inventory.yml infrastructure.yml --limit prod-server
    ```
 4. **Déployer les applications**
    ```sh
-   ansible-playbook -i inventory.yml deploy.yml
+   ansible-playbook -i inventory.yml deploy.yml --limit localhost
+   # ansible-playbook -i inventory.yml deploy.yml --limit prod-server
    ```
 5. **Démarrer/arrêter les services**
    ```sh
-   ansible-playbook -i inventory.yml start.yml
-   ansible-playbook -i inventory.yml stop.yml
+   ansible-playbook -i inventory.yml start.yml --limit localhost
+   ansible-playbook -i inventory.yml stop.yml --limit localhost
+   # ansible-playbook -i inventory.yml start.yml --limit prod-server
+   # ansible-playbook -i inventory.yml stop.yml --limit prod-server
    ```
 
 ### Bonnes pratiques
@@ -259,6 +266,7 @@ NEXT_PUBLIC_API_URL=https://api.votre-domaine.com
 ```
 
 
+
 ### Lancement de l'application
 
 #### Méthode 1 : Environnement local (développement)
@@ -267,27 +275,40 @@ Utilisez Docker Compose pour lancer tous les services en local :
 docker compose up -d
 ```
 
-#### Méthode 2 : Déploiement automatisé avec Ansible
-Pour déployer sur un ou plusieurs serveurs distants de façon automatisée :
-1. Configurez l'inventaire dans `ansible/inventory.yml`.
-2. Chiffrez vos secrets avec Ansible Vault :
-   ```sh
-   ansible-vault edit ansible/vault.yml
-   ```
-3. Déployez l'infrastructure :
-   ```sh
-   cd ansible
-   ansible-playbook -i inventory.yml infrastructure.yml
-   ```
-4. Déployez les applications :
-   ```sh
-   ansible-playbook -i inventory.yml deploy.yml
-   ```
-5. Démarrez/arrêtez les services :
-   ```sh
-   ansible-playbook -i inventory.yml start.yml
-   ansible-playbook -i inventory.yml stop.yml
-   ```
+
+#### Méthode 2 : Déploiement automatisé avec Ansible (choix dev/prod)
+
+L'inventaire Ansible permet de choisir l'environnement cible (dev ou prod) lors de l'exécution du playbook.
+
+Exemple d'inventaire (`ansible/inventory.yml`) :
+```yaml
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
+      env: dev
+    # prod-server:
+    #   ansible_host: 192.168.1.100
+    #   ansible_user: ubuntu
+    #   ansible_ssh_private_key_file: ~/.ssh/id_rsa
+    #   env: prod
+```
+
+Pour lancer en développement (local) :
+```sh
+ansible-playbook -i inventory.yml infrastructure.yml --limit localhost
+```
+
+Pour lancer en production (après avoir décommenté et adapté la section prod-server) :
+```sh
+ansible-playbook -i inventory.yml infrastructure.yml --limit prod-server
+```
+
+> Astuce : vous pouvez aussi utiliser des variables différentes par environnement via le dossier `group_vars`.
+
+**Note Redis (Docker/dev) :**
+La configuration Redis générée par Ansible désactive l'écriture de logs sur disque (`logfile ""`) pour éviter les erreurs de démarrage dans les conteneurs Docker en développement. Pour une gestion avancée des logs en production, adaptez la configuration selon vos besoins.
 
 Pour plus de détails, voir la section "Déploiement avec Ansible" plus bas et le fichier `ANSIBLE_GUIDE.md`.
 
