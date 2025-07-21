@@ -11,14 +11,32 @@
   hosts: all
   vars:
     app_name: sit_inov_website
-    app_user: sit_inov
-    app_directory: /opt/sit_inov
     vault_version: "1.15.2"
     node_version: "18.x"
     postgres_version: "15"
     redis_version: "7.0"
     nginx_version: "stable"
   tasks:
+    - name: Lecture des secrets DB depuis Vault
+      community.hashi_vault.vault_read:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        secret: "secret/data/sit_inov/db"
+      register: db_secrets
+
+    - name: Lecture du JWT secret depuis Vault
+      community.hashi_vault.vault_read:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        secret: "secret/data/sit_inov/jwt"
+      register: jwt_secret
+
+    - name: Lecture du Stripe secret depuis Vault
+      community.hashi_vault.vault_read:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        secret: "secret/data/sit_inov/stripe"
+      register: stripe_secret
     - name: Mise à jour du système
       apt:
         update_cache: yes
@@ -110,7 +128,7 @@
     # En local (env == 'dev'), cette tâche est ignorée car elle nécessite les droits root.
     - name: Création de l'utilisateur application
       user:
-        name: "{{ app_user }}"
+        name: "{{ db_secrets.value.data.username }}"
         system: yes
         shell: /bin/bash
         home: "{{ app_directory }}"
@@ -122,18 +140,26 @@
     # Configuration PostgreSQL
     - name: Configuration PostgreSQL
       postgresql_user:
-        name: "{{ app_user }}"
-        password: "{{ vault_db_password }}"
+        name: "{{ db_secrets.value.data.username }}"
+        password: "{{ db_secrets.value.data.password }}"
         role_attr_flags: CREATEDB
+        login_host: localhost
+        login_port: 5432
+        login_user: postgres
+        login_password: password
       become_user: postgres
 
     - name: Création de la base de données
       postgresql_db:
         name: "{{ app_name }}"
-        owner: "{{ app_user }}"
+        owner: "{{ db_secrets.value.data.username }}"
         encoding: UTF8
         lc_collate: fr_FR.UTF-8
         lc_ctype: fr_FR.UTF-8
+        login_host: localhost
+        login_port: 5432
+        login_user: postgres
+        login_password: password
       become_user: postgres
 
     # Configuration Redis
@@ -315,32 +341,32 @@
         certbot --nginx -d {{ app_domain }} --non-interactive --agree-tos --email {{ admin_email }}
       when: app_domain is defined and admin_email is defined
 
-handlers:
-  - name: restart nginx
-    systemd:
-      name: nginx
-      state: restarted
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
 
-  - name: restart vault
-    systemd:
-      name: vault
-      state: restarted
+    - name: restart vault
+      systemd:
+        name: vault
+        state: restarted
 
-  - name: restart backend
-    systemd:
-      name: "{{ app_name }}-backend"
-      state: restarted
+    - name: restart backend
+      systemd:
+        name: "{{ app_name }}-backend"
+        state: restarted
 
-  - name: restart frontend
-    systemd:
-      name: "{{ app_name }}-frontend"
-      state: restarted
+    - name: restart frontend
+      systemd:
+        name: "{{ app_name }}-frontend"
+        state: restarted
 
-  - name: restart redis
-    systemd:
-      name: redis
-      state: restarted
+    - name: restart redis
+      systemd:
+        name: redis
+        state: restarted
 
-  - name: reload systemd
-    systemd:
-      daemon_reload: yes
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
