@@ -19,54 +19,23 @@ Modern cybersecurity SaaS platform designed to protect web applications against 
 - **Responsive Design** mobile-first approach
 
 ### Backend Stack - NestJS Enterprise
-- **NestJS 10** with modular architecture
-- **Prisma ORM** with PostgreSQL
-- **JWT Authentication** with secure guards
-- **DTOs with validation** using class-validator
-- **Swagger API Documentation** auto-generated
-- **Rate Limiting** and advanced security
 - **Stripe Integration** complete payment system
-
-## Quick Start
-
-### Prerequisites
-- Node.js 18+ and npm 9+
-- Docker and Docker Compose (for databases)
 - PostgreSQL 15+ (or use Docker)
 - Redis 7+ (or use Docker)
-
-### Installation
-```bash
-# Clone the repository
-git clone <your-repo>
-cd sit_inov_website
 
 # Install dependencies
 npm run setup
 ```
 
-### Environment Configuration
-```bash
-# Copy environment templates
 cp apps/backend/.env.example apps/backend/.env
 cp apps/frontend/.env.example apps/frontend/.env
 cp docker-compose.example.yml docker-compose.yml
-cp redis.example.conf redis.conf
-
-# Edit the configuration files with your settings
-```
-
-### Database Setup
 ```bash
 # Start PostgreSQL and Redis with Docker
 docker compose up -d postgres redis
 
 # Generate Prisma client
 npm run db:generate
-
-# Run database migrations
-cd apps/backend && npx prisma migrate dev
-```
 
 ### Development Mode
 ```bash
@@ -75,16 +44,9 @@ npm run dev
 ```
 
 ### Application URLs
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:4000
-- **API Documentation**: http://localhost:4000/api/docs
-- **Database Health**: http://localhost:4000/api/health
-
+   ansible-playbook vault_init.yml
 ## Project Structure
 
-```
-prevent-saas/
-├── apps/
 │   ├── frontend/                 # Next.js Application
 │   │   ├── src/app/             # App Router pages and layouts
 │   │   ├── src/components/      # Reusable React components
@@ -100,10 +62,6 @@ prevent-saas/
 │       │   ├── sites/          # Protected sites management
 │       │   └── prisma/         # Database service
 │       ├── prisma/             # Database schema and migrations
-│       └── test/               # E2E and unit tests
-│
-├── init-db/                    # Database initialization scripts
-├── package.json                # Monorepo scripts and dependencies
 └── README.md                   # This documentation
 ```
 
