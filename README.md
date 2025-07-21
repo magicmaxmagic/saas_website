@@ -177,13 +177,8 @@ Le dossier `ansible/` contient tous les playbooks et fichiers nécessaires :
 ### Déploiement standard
 1. **Configurer l’inventaire**
    - Modifiez `ansible/inventory.yml` pour définir vos serveurs cibles.
-2. **Configurer les variables sensibles**
-   - Utilisez Ansible Vault pour chiffrer les secrets :
-        ```sh
-        ansible-playbook vault_init.yml
-        ```
 
-3. **Déployer l’infrastructure**
+2. **Déployer l’infrastructure**
    ```sh
    cd ansible
    # En développement (local)
@@ -191,6 +186,13 @@ Le dossier `ansible/` contient tous les playbooks et fichiers nécessaires :
    # En production (après adaptation de l'inventaire)
    # ansible-playbook -i inventory.yml infrastructure.yml --limit prod-server
    ```
+
+3. **Configurer les variables sensibles**
+   - Utilisez Ansible Vault pour chiffrer les secrets :
+        ```sh
+        ansible-playbook vault_init.yml
+        ```
+
 4. **Déployer les applications**
    ```sh
    ansible-playbook -i inventory.yml deploy.yml --limit localhost
