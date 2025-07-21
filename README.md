@@ -179,9 +179,9 @@ Le dossier `ansible/` contient tous les playbooks et fichiers nécessaires :
    - Modifiez `ansible/inventory.yml` pour définir vos serveurs cibles.
 2. **Configurer les variables sensibles**
    - Utilisez Ansible Vault pour chiffrer les secrets :
-     ```sh
-    ansible-playbook vault_init.yml
-     ```
+        ```sh
+        ansible-playbook vault_init.yml
+        ```
 
 3. **Déployer l’infrastructure**
    ```sh
