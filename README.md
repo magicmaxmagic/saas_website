@@ -43,10 +43,8 @@ npm run db:generate
 npm run dev
 ```
 
-### Application URLs
-   ansible-playbook vault_init.yml
 ## Project Structure
-
+```
 │   ├── frontend/                 # Next.js Application
 │   │   ├── src/app/             # App Router pages and layouts
 │   │   ├── src/components/      # Reusable React components
@@ -182,7 +180,7 @@ Le dossier `ansible/` contient tous les playbooks et fichiers nécessaires :
 2. **Configurer les variables sensibles**
    - Utilisez Ansible Vault pour chiffrer les secrets :
      ```sh
-     ansible-vault edit ansible/vault.yml
+    ansible-playbook vault_init.yml
      ```
 
 3. **Déployer l’infrastructure**
