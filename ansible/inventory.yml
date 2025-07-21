@@ -2,8 +2,9 @@ all:
   hosts:
     localhost:
       ansible_connection: local
-      ansible_python_interpreter: /usr/bin/python3
+      ansible_python_interpreter: /opt/homebrew/bin/python3.11
       env: dev
+      vault_db_password: "devpassword"  # Mot de passe de test pour le dev local, à ne jamais utiliser en prod
 # Exemple pour la production (à décommenter et adapter)
 #  prod-server:
 #    ansible_host: 192.168.1.100

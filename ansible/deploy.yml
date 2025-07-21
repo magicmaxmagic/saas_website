@@ -1,18 +1,42 @@
+# Playbook : deploy.yml
+# Rôle : Déploiement applicatif complet (backend, frontend, config, etc.)
+# À exécuter après infrastructure.yml (qui installe Vault, Docker, etc.)
+#
+# ⚠️ Pour le premier déploiement, certaines variables sensibles (ex : vault_db_password)
+# doivent être définies temporairement dans l'inventaire, car Vault n'est pas encore initialisé.
+# Après initialisation de Vault, stockez-y les secrets et adaptez l'inventaire/les vars.
+# =============================================================
 ---
 - name: Déploiement complet SIT Inov avec Vault
   hosts: all
-  become: yes
   vars:
     app_name: sit_inov_website
-    app_user: sit_inov
-    app_directory: /opt/sit_inov
     vault_version: "1.15.2"
     node_version: "18.x"
     postgres_version: "15"
     redis_version: "7.0"
     nginx_version: "stable"
-    
   tasks:
+    - name: Lecture des secrets DB depuis Vault
+      community.hashi_vault.vault_read:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        secret: "secret/data/sit_inov/db"
+      register: db_secrets
+
+    - name: Lecture du JWT secret depuis Vault
+      community.hashi_vault.vault_read:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        secret: "secret/data/sit_inov/jwt"
+      register: jwt_secret
+
+    - name: Lecture du Stripe secret depuis Vault
+      community.hashi_vault.vault_read:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        secret: "secret/data/sit_inov/stripe"
+      register: stripe_secret
     - name: Mise à jour du système
       apt:
         update_cache: yes
@@ -100,31 +124,42 @@
       when: ansible_os_family == "Debian"
 
     # Configuration utilisateur
+    # La création de l'utilisateur application n'est nécessaire qu'en production.
+    # En local (env == 'dev'), cette tâche est ignorée car elle nécessite les droits root.
     - name: Création de l'utilisateur application
       user:
-        name: "{{ app_user }}"
+        name: "{{ db_secrets.value.data.username }}"
         system: yes
         shell: /bin/bash
         home: "{{ app_directory }}"
         create_home: yes
         groups: docker
         append: yes
+      when: env != 'dev'
 
     # Configuration PostgreSQL
     - name: Configuration PostgreSQL
       postgresql_user:
-        name: "{{ app_user }}"
-        password: "{{ vault_db_password }}"
+        name: "{{ db_secrets.value.data.username }}"
+        password: "{{ db_secrets.value.data.password }}"
         role_attr_flags: CREATEDB
+        login_host: localhost
+        login_port: 5432
+        login_user: postgres
+        login_password: password
       become_user: postgres
 
     - name: Création de la base de données
       postgresql_db:
         name: "{{ app_name }}"
-        owner: "{{ app_user }}"
+        owner: "{{ db_secrets.value.data.username }}"
         encoding: UTF8
         lc_collate: fr_FR.UTF-8
         lc_ctype: fr_FR.UTF-8
+        login_host: localhost
+        login_port: 5432
+        login_user: postgres
+        login_password: password
       become_user: postgres
 
     # Configuration Redis

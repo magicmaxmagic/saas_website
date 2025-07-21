@@ -1,0 +1,45 @@
+---
+- name: Initialisation des secrets dans Vault
+  hosts: localhost
+  gather_facts: false
+  vars_prompt:
+    - name: db_user
+      prompt: "Nom d'utilisateur PostgreSQL à stocker dans Vault"
+      private: no
+    - name: db_password
+      prompt: "Mot de passe PostgreSQL à stocker dans Vault"
+      private: yes
+    - name: jwt_secret
+      prompt: "JWT Secret à stocker dans Vault"
+      private: yes
+    - name: stripe_secret
+      prompt: "Stripe Secret à stocker dans Vault"
+      private: yes
+  tasks:
+    - name: Stocker le mot de passe PostgreSQL dans Vault
+      community.hashi_vault.vault_write:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        path: "secret/data/sit_inov/db"
+        data:
+          data:
+            username: "{{ db_user }}"
+            password: "{{ db_password }}"
+
+    - name: Stocker le JWT secret dans Vault
+      community.hashi_vault.vault_write:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        path: "secret/data/sit_inov/jwt"
+        data:
+          data:
+            secret: "{{ jwt_secret }}"
+
+    - name: Stocker le Stripe secret dans Vault
+      community.hashi_vault.vault_write:
+        url: "http://127.0.0.1:8200"
+        token: "myroot"
+        path: "secret/data/sit_inov/stripe"
+        data:
+          data:
+            secret: "{{ stripe_secret }}"
